@@ -20,8 +20,8 @@ FleshPhysicsController\
 │  ├─ WindowsFileDialog.cs          Windows 保存/打开对话框（P/Invoke）
 │  └─ Presets\*.xml                 内置预设（Soft/Realistic/Exaggerated）
 ├─ tools\Build-ThighPhysicsController.ps1  构建 + 打包 + SHA-256
-├─ packaging\FleshPhysicsController_0.8.6.3\ 发行目录（含 README.zh-CN.md、CHANGELOG.md）
-├─ packaging\FleshPhysicsController_0.8.6.3.zip + .sha256
+├─ packaging\FleshPhysicsController_0.8.6.4\ 发行目录（含 README.zh-CN.md、CHANGELOG.md）
+├─ packaging\FleshPhysicsController_0.8.6.4.zip + .sha256
 ├─ README.md                        用户/功能说明
 ├─ CHANGELOG.md                     更新日志
 └─ DEVELOPMENT.md                   本文档
@@ -30,7 +30,7 @@ FleshPhysicsController\
 ## 关键标识（不要乱改）
 
 - GUID：`codex.koikatumanager.thighphysicscontroller`（旧卡数据兼容，不能变）
-- 插件版本：0.8.6.3（`BepInPlugin`）
+- 插件版本：0.8.6.4（`BepInPlugin`）
 - 显示名：Flesh Physics Controller（英文，兼容性更好；中文名“躯体肉感物理控制器”仅用于文档）
 - 卡片数据版本：55（`ThighParams.DataVersion`；v54 为已归档坏版本）
 - 依赖：KKAPI `marco.kkapi`（不限制最低版本）、ExtensibleSaveFormat、0Harmony
@@ -56,11 +56,11 @@ FleshPhysicsController\
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-ThighPhysicsController.ps1
 ```
 
-产物：`packaging\FleshPhysicsController_0.8.6.3\`、ZIP、SHA-256。构建脚本会做版本/功能字符串烟测。
+产物：`packaging\FleshPhysicsController_0.8.6.4\`、ZIP、SHA-256。构建脚本会做版本/功能字符串烟测。
 
 ## 安装与测试
 
-- 安装：把 `packaging\FleshPhysicsController_0.8.6.3\BepInEx\plugins\ThighPhysicsController\`
+- 安装：把 `packaging\FleshPhysicsController_0.8.6.4\BepInEx\plugins\ThighPhysicsController\`
   覆盖到游戏 `BepInEx\plugins\ThighPhysicsController\`。
 - 测试：启动 `CharaStudio.exe`，Insert 打开面板，加载角色卡。
 - 日志：`Z:\Koikatu\output_log.txt`（插件 Debug 日志也写到这）。
@@ -72,7 +72,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-ThighPhysicsCo
 ## 日志格式速查
 
 ```text
-Loading [Flesh Physics Controller 0.8.6.3]
+Loading [Flesh Physics Controller 0.8.6.4]
 Flesh physics initialized: bones=8 part=Thigh
 Flesh physics initialized: bones=6 part=Arm
 Flesh physics initialized: bones=2 part=Belly

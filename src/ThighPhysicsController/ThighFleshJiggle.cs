@@ -19,7 +19,14 @@ public sealed class ThighFleshJiggle : MonoBehaviour
 
     private static bool IsNan(Vector3 v)
     {
-        return float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z);
+        return float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z) ||
+               float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z);
+    }
+
+    private static bool IsBadQuat(Quaternion q)
+    {
+        return float.IsNaN(q.x) || float.IsNaN(q.y) || float.IsNaN(q.z) || float.IsNaN(q.w) ||
+               float.IsInfinity(q.x) || float.IsInfinity(q.y) || float.IsInfinity(q.z) || float.IsInfinity(q.w);
     }
 
     private sealed class FleshBone
@@ -30,6 +37,7 @@ public sealed class ThighFleshJiggle : MonoBehaviour
         public Vector3 RestDirLocal;
         public Vector3 PristineLocal;
         public Quaternion PristineRot;
+        public Vector3 PristineScale;
         public Vector3 BaseLocal;
         public Vector3 Offset;
         public Vector3 PrevOffset;
@@ -295,6 +303,74 @@ public sealed class ThighFleshJiggle : MonoBehaviour
         BuildChains();
     }
 
+    private void ResetFleshBoneState(FleshBone flesh)
+    {
+        if (flesh == null || flesh.Bone == null)
+        {
+            return;
+        }
+        bool badBone = IsNan(flesh.Bone.localPosition) || IsBadQuat(flesh.Bone.localRotation);
+        if (badBone)
+        {
+            flesh.Bone.localPosition = IsNan(flesh.PristineLocal) ? Vector3.zero : flesh.PristineLocal;
+            flesh.Bone.localRotation = IsBadQuat(flesh.PristineRot) ? Quaternion.identity : flesh.PristineRot;
+        }
+        if (IsNan(flesh.Bone.localScale) || flesh.Bone.localScale.sqrMagnitude < 1e-8f)
+        {
+            Vector3 pristineScale = IsNan(flesh.PristineScale) ? Vector3.one : flesh.PristineScale;
+            flesh.Bone.localScale = pristineScale.sqrMagnitude < 1e-8f ? Vector3.one : pristineScale;
+        }
+        flesh.LastSetRot = flesh.Bone.localRotation;
+        flesh.BaseLocal = flesh.Bone.localPosition;
+        flesh.Offset = Vector3.zero;
+        flesh.PrevOffset = Vector3.zero;
+        flesh.AccelSmoothed = Vector3.zero;
+        flesh.RotSmoothed = Vector3.zero;
+        flesh.RotTarget = Vector3.zero;
+        flesh.AngularVelBody = Vector3.zero;
+        flesh.LastSag = Vector3.zero;
+        flesh.PrevBaseWorld = flesh.Bone.position;
+        flesh.PrevBaseWorld2 = flesh.Bone.position;
+        flesh.Position = flesh.Bone.position;
+        flesh.PrevPosition = flesh.Bone.position;
+        flesh.LastApplied = Vector3.zero;
+        flesh.LastWorldApply = Vector3.zero;
+        flesh.LastAppliedLocal = Vector3.zero;
+        flesh.DriftWatchTime = 0f;
+        flesh.PrevParentRot = flesh.Bone.parent == null ? Quaternion.identity : flesh.Bone.parent.rotation;
+    }
+
+    private static void ResetChainParticle(ChainParticle particle)
+    {
+        if (particle == null || particle.Bone == null)
+        {
+            return;
+        }
+        if (IsNan(particle.BaseLocal))
+        {
+            particle.BaseLocal = Vector3.zero;
+        }
+        if (IsBadQuat(particle.BaseRotLocal))
+        {
+            particle.BaseRotLocal = Quaternion.identity;
+        }
+        if (IsNan(particle.Bone.localPosition) || IsBadQuat(particle.Bone.localRotation))
+        {
+            particle.Bone.localPosition = particle.BaseLocal;
+            particle.Bone.localRotation = particle.BaseRotLocal;
+        }
+        if (IsNan(particle.Bone.localScale) || particle.Bone.localScale.sqrMagnitude < 1e-8f)
+        {
+            particle.Bone.localScale = Vector3.one;
+        }
+        particle.Position = particle.Bone.position;
+        particle.PrevPosition = particle.Bone.position;
+        particle.LastAppliedLocal = Vector3.zero;
+        particle.LastAppliedRotLocal = Quaternion.identity;
+        particle.RotSmoothed = Vector3.zero;
+        particle.RotTarget = Vector3.zero;
+    }
+
     private FleshBone AddBone(string name, int boneIndex)
     {
         Transform bone = FindBone(name);
@@ -307,6 +383,7 @@ public sealed class ThighFleshJiggle : MonoBehaviour
         flesh.Parent = bone.parent;
         flesh.PristineLocal = bone.localPosition;
         flesh.PristineRot = bone.localRotation;
+        flesh.PristineScale = bone.localScale;
         flesh.LastSetRot = bone.localRotation;
         flesh.BaseLocal = bone.localPosition;
         flesh.PrevBaseWorld = bone.position;
@@ -490,14 +567,13 @@ public sealed class ThighFleshJiggle : MonoBehaviour
                     continue;
                 }
                 Vector3 baseWorld = parent.TransformPoint(flesh.BaseLocal);
-                if (IsNan(baseWorld) || IsNan(flesh.Offset) || IsNan(flesh.Position))
+                if (IsNan(baseWorld) || IsNan(flesh.Offset) || IsNan(flesh.Position) ||
+                    IsNan(flesh.AccelSmoothed) || IsNan(flesh.RotSmoothed) ||
+                    IsNan(flesh.RotTarget) || IsNan(flesh.AngularVelBody) ||
+                    IsNan(flesh.PrevBaseWorld) || IsNan(flesh.PrevBaseWorld2) ||
+                    IsNan(flesh.PrevOffset) || IsNan(flesh.LastSag))
                 {
-                    flesh.Offset = Vector3.zero;
-                    flesh.Position = flesh.PrevPosition = flesh.Bone.position;
-                    flesh.BaseLocal = flesh.Bone.localPosition;
-                    flesh.LastApplied = Vector3.zero;
-                    flesh.LastWorldApply = Vector3.zero;
-                    flesh.LastAppliedLocal = Vector3.zero;
+                    ResetFleshBoneState(flesh);
                     continue;
                 }
                 if (flesh.Parent != parent)
@@ -704,6 +780,11 @@ public sealed class ThighFleshJiggle : MonoBehaviour
                     Vector3 world = character.TransformDirection(offset);
                     Vector3 targetWorld = baseWorld + world;
                     flesh.Bone.localPosition = parent.InverseTransformPoint(targetWorld);
+                    if (IsNan(flesh.Bone.localPosition))
+                    {
+                        ResetFleshBoneState(flesh);
+                        continue;
+                    }
                     flesh.PrevPosition = flesh.Position;
                     flesh.Position = targetWorld;
                     flesh.LastApplied = offset;
@@ -773,6 +854,11 @@ public sealed class ThighFleshJiggle : MonoBehaviour
                     align.ToAngleAxis(out rcAngle, out rcAxis);
                     rcAngle = Mathf.Clamp(rcAngle * 0.5f, -12f, 12f);
                     flesh.Bone.rotation = Quaternion.AngleAxis(rcAngle, rcAxis) * baseWorldRot;
+                    if (IsBadQuat(flesh.Bone.rotation))
+                    {
+                        ResetFleshBoneState(flesh);
+                        continue;
+                    }
                 }
                 flesh.LastSetRot = flesh.Bone.rotation;
                 continue;
@@ -781,7 +867,16 @@ public sealed class ThighFleshJiggle : MonoBehaviour
             if (rotAmp > 0.0001f)
             {
                 flesh.RotSmoothed = Vector3.Lerp(flesh.RotSmoothed, flesh.RotTarget, 0.25f);
-                flesh.Bone.localRotation = flesh.PristineRot * Quaternion.Euler(flesh.RotSmoothed);
+                Vector3 rotEuler = flesh.RotSmoothed;
+                rotEuler.x = Mathf.Clamp(rotEuler.x, -30f, 30f);
+                rotEuler.y = Mathf.Clamp(rotEuler.y, -30f, 30f);
+                rotEuler.z = Mathf.Clamp(rotEuler.z, -30f, 30f);
+                flesh.Bone.localRotation = flesh.PristineRot * Quaternion.Euler(rotEuler);
+                if (IsBadQuat(flesh.Bone.localRotation))
+                {
+                    ResetFleshBoneState(flesh);
+                    continue;
+                }
                 flesh.LastSetRot = flesh.Bone.localRotation;
             }
             else
@@ -857,6 +952,12 @@ public sealed class ThighFleshJiggle : MonoBehaviour
             Vector3 anchorAxis;
             anchorRotDelta.ToAngleAxis(out anchorAngle, out anchorAxis);
             Vector3 anchorAngVel = anchorAxis * anchorAngle;
+            if (IsNan(anchorPos) || IsNan(anchorMove) || IsNan(anchorAngVel))
+            {
+                chain.PrevAnchorPos = chain.Anchor.position;
+                chain.PrevAnchorRot = chain.Anchor.rotation;
+                continue;
+            }
             if (chain.Particles.Count == 1)
             {
                 UpdateSingleParticleChain(chain, anchorPos, anchorMove, anchorAngVel,
@@ -880,10 +981,14 @@ public sealed class ThighFleshJiggle : MonoBehaviour
                 Vector3 worldBase = parent == null
                     ? particle.Bone.position
                     : parent.TransformPoint(particle.BaseLocal);
-                if (IsNan(particle.Position) || IsNan(particle.PrevPosition) || IsNan(worldBase))
+                if (IsNan(particle.Position) || IsNan(particle.PrevPosition) || IsNan(worldBase) ||
+                    IsNan(particle.Bone.localPosition) || IsBadQuat(particle.Bone.localRotation))
                 {
+                    ResetChainParticle(particle);
+                    worldBase = parent == null
+                        ? particle.Bone.position
+                        : parent.TransformPoint(particle.BaseLocal);
                     particle.Position = particle.PrevPosition = worldBase;
-                    particle.LastAppliedLocal = Vector3.zero;
                 }
 
                 // BaseLocal is the skeleton pose WITHOUT our own offset, stored in the
@@ -1041,7 +1146,15 @@ public sealed class ThighFleshJiggle : MonoBehaviour
                         rcAngle = Mathf.Clamp(rcAngle * 0.5f, -12f, 12f);
                         Quaternion limited = Quaternion.AngleAxis(rcAngle, rcAxis);
                         prev.Bone.rotation = limited * baseWorldRot;
-                        prev.LastAppliedRotLocal = Quaternion.Inverse(prev.BaseRotLocal) * prev.Bone.localRotation;
+                        if (IsBadQuat(prev.Bone.rotation))
+                        {
+                            prev.Bone.localRotation = prev.BaseRotLocal;
+                            prev.LastAppliedRotLocal = Quaternion.identity;
+                        }
+                        else
+                        {
+                            prev.LastAppliedRotLocal = Quaternion.Inverse(prev.BaseRotLocal) * prev.Bone.localRotation;
+                        }
                         Vector3 euler = prev.Bone.localEulerAngles;
                         rcRotText = " rcRot=" + euler.ToString("F1");
                     }
@@ -1119,6 +1232,11 @@ public sealed class ThighFleshJiggle : MonoBehaviour
                 {
                     particle.Bone.localPosition = parent.InverseTransformPoint(worldBase + worldDelta);
                 }
+                if (IsNan(particle.Bone.localPosition) || IsBadQuat(particle.Bone.localRotation))
+                {
+                    ResetChainParticle(particle);
+                    continue;
+                }
                 particle.LastAppliedLocal = particle.Bone.localPosition - particle.BaseLocal;
                 if (logChain)
                 {
@@ -1166,6 +1284,18 @@ public sealed class ThighFleshJiggle : MonoBehaviour
         Vector3 worldBase = parent == null
             ? particle.Bone.position
             : parent.TransformPoint(particle.BaseLocal);
+        if (IsNan(worldBase) || IsNan(particle.Position) || IsNan(particle.PrevPosition) ||
+            IsNan(particle.BaseLocal) || IsNan(particle.Bone.localPosition) || IsBadQuat(particle.Bone.localRotation))
+        {
+            ResetChainParticle(particle);
+            worldBase = parent == null
+                ? particle.Bone.position
+                : parent.TransformPoint(particle.BaseLocal);
+            if (IsNan(worldBase) || IsNan(particle.Position))
+            {
+                return;
+            }
+        }
         // Local-space external-move detection (same as multi-particle chains).
         if ((particle.Bone.localPosition -
              (particle.BaseLocal + particle.LastAppliedLocal)).magnitude > 0.005f)
@@ -1225,6 +1355,10 @@ public sealed class ThighFleshJiggle : MonoBehaviour
         else
         {
             particle.Bone.localPosition = parent.InverseTransformPoint(worldBase + worldDelta);
+        }
+        if (IsNan(particle.Bone.localPosition) || IsBadQuat(particle.Bone.localRotation))
+        {
+            ResetChainParticle(particle);
         }
         particle.LastAppliedLocal = particle.Bone.localPosition - particle.BaseLocal;
     }

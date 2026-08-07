@@ -13,7 +13,7 @@ using UnityEngine;
 namespace ThighPhysicsController;
 
 [BepInDependency("marco.kkapi")]
-[BepInPlugin("codex.koikatumanager.thighphysicscontroller", "Flesh Physics Controller", "0.8.6.3")]
+[BepInPlugin("codex.koikatumanager.thighphysicscontroller", "Flesh Physics Controller", "0.8.6.4")]
 public class ThighPhysicsControllerPlugin : BaseUnityPlugin
 {
     internal static ConfigEntry<KeyboardShortcut> WindowKey;
