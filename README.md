@@ -1,5 +1,11 @@
 # 躯体肉感物理控制器（Flesh Physics Controller）v0.8.6.3
 
+[![Release](https://img.shields.io/github/v/release/DevoLutioner/FleshPhysicsController)](https://github.com/DevoLutioner/FleshPhysicsController/releases)
+
+**English:** Flesh Physics Controller is a BepInEx 5 plugin for Koikatsu / Koikatsu Party that adds flesh jiggle physics to the thighs, arms and belly. It includes a spring system for everyday use and an MMD-accurate chain system for dancing, with per-bone controls, XML presets and per-card save.
+
+**搜索关键词 / Keywords:** Koikatsu, Koikatu, Koikatsu Party, KKS, flesh physics, jiggle, thighs, arm, belly, dynamic bone, spring physics, chain physics, BepInEx, plugin, mod
+
 为角色的大腿、手臂、小肚子增加“肉感物理”：肉随动作自然滞后摆动，
 类似胸部/臀部物理的手感。不修改角色数据文件，不改骨骼缩放，
 尽量保持角色卡片原本的体型。
