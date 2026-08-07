@@ -1,0 +1,142 @@
+# 躯体肉感物理控制器（Flesh Physics Controller）开发交接文档
+
+## 这是什么
+
+BepInEx 5 插件（原名 Thigh Physics Controller），为 Koikatu / Koikatsu Party 角色增加
+“肉感物理”：大腿、手臂、小肚子的肉随动作滞后摆动。v0.8.0 起改名
+“躯体肉感物理控制器”。
+
+## 目录结构
+
+```text
+FleshPhysicsController\
+├─ src\ThighPhysicsController\      插件 C# 源码（项目名沿用 ThighPhysicsController）
+│  ├─ ThighPhysicsController.csproj  net20 目标，引用游戏程序集
+│  ├─ FleshPart.cs                  部位定义（Thigh/Arm/Belly 骨骼链）
+│  ├─ ThighParams.cs                参数模型 + 卡片序列化（v53，arm_/belly_ 前缀）
+│  ├─ ThighController.cs            每角色控制器 + 预设 XML 读写
+│  ├─ ThighFleshJiggle.cs           弹簧模式 + 链式模式物理（核心）
+│  ├─ ThighPhysicsControllerPlugin.cs  BepInEx 入口 + 面板
+│  ├─ WindowsFileDialog.cs          Windows 保存/打开对话框（P/Invoke）
+│  └─ Presets\*.xml                 内置预设（Soft/Realistic/Exaggerated）
+├─ tools\Build-ThighPhysicsController.ps1  构建 + 打包 + SHA-256
+├─ packaging\FleshPhysicsController_0.8.6.3\ 发行目录（含 README.zh-CN.md、CHANGELOG.md）
+├─ packaging\FleshPhysicsController_0.8.6.3.zip + .sha256
+├─ README.md                        用户/功能说明
+├─ CHANGELOG.md                     更新日志
+└─ DEVELOPMENT.md                   本文档
+```
+
+## 关键标识（不要乱改）
+
+- GUID：`codex.koikatumanager.thighphysicscontroller`（旧卡数据兼容，不能变）
+- 插件版本：0.8.6.3（`BepInPlugin`）
+- 显示名：Flesh Physics Controller（英文，兼容性更好；中文名“躯体肉感物理控制器”仅用于文档）
+- 卡片数据版本：55（`ThighParams.DataVersion`；v54 为已归档坏版本）
+- 依赖：KKAPI `marco.kkapi`（不限制最低版本）、ExtensibleSaveFormat、0Harmony
+
+## 部位与骨骼
+
+部位定义在 `FleshPart.cs`：
+
+| 部位 | 锚点 | 肉感骨（链序） | 说明 |
+| --- | --- | --- | --- |
+| Thigh | cf_j_thigh00_L/R | cf_s_thigh01/02/03 → cf_s_leg02 | 4 骨/侧，共 8 骨 |
+| Arm | cf_j_arm00_L/R | cf_s_arm01/02/03 | 3 骨/侧，共 6 骨 |
+| Belly | cf_j_spine03 | cf_s_waist01 | 1 骨（spine03 为刚性骨，已移除） |
+
+**重要**：不要给 Belly 加回 `cf_s_waist02`——它是承载双腿（cf_s_leg_L/R）的结构骨，
+跳舞时位移会导致身体皮肤撕裂/消失（0.8.0 已修复并加了 NaN 防护）。
+
+## 构建
+
+需要 .NET 8 SDK，以及游戏根目录（默认 `Z:\Koikatu`，可用 `KOIKATU_BUILD_GAME_ROOT` 覆盖）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-ThighPhysicsController.ps1
+```
+
+产物：`packaging\FleshPhysicsController_0.8.6.3\`、ZIP、SHA-256。构建脚本会做版本/功能字符串烟测。
+
+## 安装与测试
+
+- 安装：把 `packaging\FleshPhysicsController_0.8.6.3\BepInEx\plugins\ThighPhysicsController\`
+  覆盖到游戏 `BepInEx\plugins\ThighPhysicsController\`。
+- 测试：启动 `CharaStudio.exe`，Insert 打开面板，加载角色卡。
+- 日志：`Z:\Koikatu\output_log.txt`（插件 Debug 日志也写到这）。
+- 调试配置：`Z:\Koikatu\BepInEx\config\codex.koikatumanager.thighphysicscontroller.cfg`
+  - `Log flesh physics = true`：每 2 秒输出弹簧/链式偏移；
+  - `Auto load studio scene = <角色卡.png>`：自动加载角色；
+  - `Dump skeleton bones = true`：启动时转储骨骼层级。
+
+## 日志格式速查
+
+```text
+Loading [Flesh Physics Controller 0.8.6.3]
+Flesh physics initialized: bones=8 part=Thigh
+Flesh physics initialized: bones=6 part=Arm
+Flesh physics initialized: bones=2 part=Belly
+Flesh chain params: weight=... damping=... elasticity=... stiffness=... inert=... motionGain=...
+Flesh physics [cf_s_thigh02_L]: chain applied=(x,y,z) mag=... off=... anchor=... amp=... axis=(...) rc=0 rcRot=(...)
+Flesh physics [cf_s_thigh01_L]: applied=(x,y,z) mag=... rot=(...)
+```
+
+- 弹簧模式行含 `rot=`；链式模式行含 `anchor/amp/axis/rc/rcRot`；
+- `off` = 粒子相对基准的偏移，`mag` = 实际写入位移；
+- `chain re-anchored` 只在瞬移/大换姿势时出现。
+
+## 当前状态与决策记录
+
+- 弹簧模式是主推手感（用户认可）；链式模式保留为“跳舞增强”选项。
+- 弹簧/链式参数完全独立：共享参数 `Chain`/`ChainBones` vs 弹簧 `Thigh00`/`Bones`；
+  面板按部位（Thigh/Arm/Belly）切换编辑，控件 ID 带模式前缀避免缓冲串扰。
+- Dance response（MotionGain）：弹簧/链式统一倍数
+  `gain × (weight/0.8) × ((0.25+inert)/0.6)`，默认参数下 gain=1 即 1.0x；
+  链式参考系数 0.000384（gain=1 约等于旧版 0.001 驱动），弹簧沿用原有各项系数，
+  两边默认手感与之前一致，滑条语义统一；0.8.5 起上限放开到 5
+  （UI/卡片/预设三处同步）。弹簧减抖：Weight 0.7/Damping 0.12/Inert 0.30，
+  加速度平滑 0.45→0.25、X/Z 增益 1.25、驱动 0.00025、弹簧速度阻尼下限 0.8；
+  链式增强：Weight 0.7/Damping 0.30/Inert 0.40，舞蹈驱动系数 0.0006，
+  切向限幅 0.05、速度限幅 0.22。
+- 多角色（0.8.5）：角色列表按女性/男性分组（`#序号 名字`），选中按 InstanceID 记忆，
+  点击行直接切换；性别映射 KK `sex==0` 为男；
+  参数按 `fullname|sex|personality` 会话内记忆（`FleshProfile`），
+  同名同性别角色共享同一参数对象实现自动同步；`OnReload` 尊重 `maintainState`；
+  记忆仅限本次会话，卡片保存仍写回卡内。
+- 兼容（0.8.5）：`[BepInDependency("marco.kkapi")]` 去掉最低版本号，
+  只用 KKAPI 1.x 长期稳定的 API（RegisterExtraBehaviour / CharaCustomFunctionController）。
+- 复位与 RC（0.8.5.1）：部位开关关闭时 `LateUpdate` 调用 `ClearDeformation`
+  恢复姿态；链式第二遍禁用骨直接复位位置+旋转；`RemoveFlesh` 先复位再销毁，
+  防止“清除无效/禁用后再启用把变形当原始姿态”；RC 默认全开
+  （`PerBoneAmount.RotCalc`、`ThighBoneParams.IsRotationCalc`、内置预设），
+  链式 RC 跳过 `GetAmp<=0` 的骨骼。
+- 弹簧防积累（0.8.5.1）：重锚检测从世界空间改为父空间局部判定
+  （`localPosition - (BaseLocal + LastAppliedLocal)`，阈值 0.005m），
+  父骨旋转不再误触发重锚、不再把自身偏移固化进 BaseLocal；弹簧 RC 改为
+  基准旋转 `baseWorldRot * RestDirLocal` + ±12° 限幅，消除子骨反馈；
+  `Auto fix spring drift`（默认 true）后台看门狗：基准偏移 >0.005m 持续 2 秒、
+  且 1 秒内无外部重锚时，按每帧 0.0005m 把 BaseLocal 拉回 PristineLocal。
+- 开放参数（0.8.6）：弹簧 `JitterFreq`（缩放 springVel 与弹性回中）与
+  `MotionSmooth`（替换硬编码的 0.25/0.3 滤波系数）；链式 `JitterFreq`
+  （缩放轴向刚度与垂直弹性修正）；卡片键 `jf/ms/c_jf`，预设 XML
+  `JitterFreq/MotionSmooth`，UI 三个新滑条均直接作用于物理。
+- 小肚子单骨链（0.8.6.2）：`cf_s_spine03` 为刚性骨已从小肚子链移除，
+  仅保留 `cf_s_waist01`；`BuildChain` 允许单粒子链，
+  `UpdateSingleParticleChain` 按“子粒子”方式积分单粒子（不回头读骨骼，
+  避免自反馈），RC 因无子骨可瞄准而自动退化为纯位移。
+- 链式“橡皮泥”历史问题：根因是长度约束过松 + 参考系漂移；现已用
+  BaseLocal 父空间基准 + 切向/径向弹簧 + 写入/leash 限幅解决。
+- RC（RotCalc）：基于基准旋转做瞄准约束（不累积），旋转限幅 12°；非 RC 骨骼的 Rot
+  用偏移驱动平滑旋转，默认 0.25。
+- 兼容性：ABMX（KKABMX）会写这些骨骼，链式每帧按当前骨骼刷新静止方向/长度跟随；
+  BPC 不直接冲突，但会放大骨盆运动，链式已对 anchorMove 限幅 0.30m。
+- 日志洪水：`rotation overwritten by game` 已节流（每骨每 2 秒 1 条，仅真正写旋转时）。
+
+## 未完成/注意点
+
+- 类名/程序集名/插件目录仍是 ThighPhysicsController（显示名与打包名已改为 Flesh Physics，
+  内部标识未全量重命名，避免破坏安装路径、预设目录与旧配置）；
+- `ThighBoneParams` 的 CollisionRadius/LeverLength/ReflectSpeed 等字段仅保留兼容，不参与物理；
+- 旧版本打包（0.4.10~0.7.2）仍留在 `Z:\Koikatu\DeepSeekEdition\KoikatuManager\packaging\` 作为历史存档。
+- 0.9.0（碰撞体系统）为坏版本，已归档到
+  `Z:\Koikatu\DeepSeekEdition\_broken_archive\FleshPhysicsController_0.9.0_20260806\`，不要回滚使用。

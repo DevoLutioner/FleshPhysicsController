@@ -1,0 +1,100 @@
+param(
+    [ValidateSet('Debug', 'Release')]
+    [string]$Configuration = 'Release',
+
+    [string]$Version = '0.8.6.3',
+
+    [string]$GameRoot = '',
+
+    [switch]$SkipArchive,
+
+    [switch]$Force
+)
+
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$project = Join-Path $repoRoot 'src\ThighPhysicsController\ThighPhysicsController.csproj'
+$outputDll = Join-Path $repoRoot "src\ThighPhysicsController\bin\$Configuration\ThighPhysicsController.dll"
+
+if ([string]::IsNullOrWhiteSpace($GameRoot)) {
+    $GameRoot = $env:KOIKATU_BUILD_GAME_ROOT
+}
+if ([string]::IsNullOrWhiteSpace($GameRoot)) {
+    $GameRoot = 'Z:\Koikatu'
+}
+$GameRoot = [IO.Path]::GetFullPath($GameRoot).TrimEnd('\')
+
+$staging = Join-Path $repoRoot "packaging\FleshPhysicsController_$Version"
+$pluginDir = Join-Path $staging 'BepInEx\plugins\ThighPhysicsController'
+$presetsDir = Join-Path $pluginDir 'Presets'
+$sourcePresets = Join-Path $repoRoot 'src\ThighPhysicsController\Presets'
+$readme = Join-Path $repoRoot 'README.md'
+$changelog = Join-Path $repoRoot 'CHANGELOG.md'
+
+Write-Host "Building Flesh Physics Controller $Version (game root: $GameRoot)"
+& dotnet build $project -c $Configuration -p:KOIKATU_BUILD_GAME_ROOT=$GameRoot
+if ($LASTEXITCODE -ne 0) {
+    throw "Build failed with exit code $LASTEXITCODE"
+}
+
+if (Test-Path $staging) {
+    if (-not $Force) {
+        throw "Staging directory already exists: $staging (pass -Force to replace)"
+    }
+    Remove-Item -LiteralPath $staging -Recurse -Force
+}
+
+New-Item -ItemType Directory -Path $presetsDir -Force | Out-Null
+Copy-Item -LiteralPath $outputDll -Destination (Join-Path $pluginDir 'ThighPhysicsController.dll')
+Copy-Item -Path (Join-Path $sourcePresets '*.xml') -Destination $presetsDir
+Copy-Item -LiteralPath $readme -Destination (Join-Path $staging 'README.zh-CN.md')
+Copy-Item -LiteralPath $changelog -Destination (Join-Path $staging 'CHANGELOG.md')
+
+# Smoke checks against the freshly built DLL. Metadata strings are UTF-8, user-facing
+# string literals are UTF-16LE in the #US heap, so search both byte encodings.
+function Test-DllMarker {
+    param([byte[]]$Haystack, [string]$Marker)
+    $ascii = [Text.Encoding]::ASCII.GetBytes($Marker)
+    $utf16 = [Text.Encoding]::Unicode.GetBytes($Marker)
+    for ($i = 0; $i -le $Haystack.Length - $ascii.Length; $i++) {
+        $match = $true
+        for ($j = 0; $j -lt $ascii.Length; $j++) {
+            if ($Haystack[$i + $j] -ne $ascii[$j]) { $match = $false; break }
+        }
+        if ($match) { return $true }
+    }
+    for ($i = 0; $i -le $Haystack.Length - $utf16.Length; $i++) {
+        $match = $true
+        for ($j = 0; $j -lt $utf16.Length; $j++) {
+            if ($Haystack[$i + $j] -ne $utf16[$j]) { $match = $false; break }
+        }
+        if ($match) { return $true }
+    }
+    return $false
+}
+
+$dllBytes = [IO.File]::ReadAllBytes((Join-Path $pluginDir 'ThighPhysicsController.dll'))
+foreach ($marker in @($Version, 'Flesh Physics Controller', 'Game DynamicBone chain physics', 'MotionGain', 'EnsureXml', 'RotCalc', 'Remember per-character settings', 'Auto fix spring drift')) {
+    if (-not (Test-DllMarker $dllBytes $marker)) {
+        throw "Built DLL is missing expected feature marker: $marker"
+    }
+}
+
+Write-Host "Staged: $staging"
+
+if (-not $SkipArchive) {
+    $zip = Join-Path $repoRoot "packaging\FleshPhysicsController_$Version.zip"
+    if (Test-Path $zip) {
+        if (-not $Force) {
+            throw "Archive already exists: $zip (pass -Force to replace)"
+        }
+        Remove-Item -LiteralPath $zip -Force
+        Remove-Item -LiteralPath "$zip.sha256" -Force -ErrorAction SilentlyContinue
+    }
+    Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip -CompressionLevel Optimal
+    $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    Set-Content -LiteralPath "$zip.sha256" -Value $hash -Encoding ASCII
+    Write-Host "Archive: $zip"
+    Write-Host "SHA256: $hash"
+}
